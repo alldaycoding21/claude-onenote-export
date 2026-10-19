@@ -13,7 +13,7 @@ Microsoft OneNote 노트북 **전체**를 로컬 마크다운으로 내보내는
 ## 설치
 Claude Code에서 실행합니다:
 ```
-/plugin marketplace add <owner>/claude-onenote-export
+/plugin marketplace add alldaycoding21/claude-onenote-export
 /plugin install onenote-export@onenote-export
 ```
 - 로컬 사본에서 설치하려면 `/plugin marketplace add ./claude-onenote-export`.

@@ -5,6 +5,8 @@
   "author": {
     "name": "onenote-export contributors"
   },
+  "homepage": "https://github.com/alldaycoding21/claude-onenote-export",
+  "repository": "https://github.com/alldaycoding21/claude-onenote-export",
   "license": "MIT",
   "keywords": [
     "onenote",

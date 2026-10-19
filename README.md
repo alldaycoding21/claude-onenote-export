@@ -16,10 +16,9 @@ OneNote has no "export everything" button. Whole-notebook PDF export is not avai
 ## Install
 In Claude Code:
 ```
-/plugin marketplace add <owner>/claude-onenote-export
+/plugin marketplace add alldaycoding21/claude-onenote-export
 /plugin install onenote-export@onenote-export
 ```
-- Replace `<owner>` with the GitHub owner of this repo.
 - From a local clone, use `/plugin marketplace add ./claude-onenote-export`.
 
 Requirements:
