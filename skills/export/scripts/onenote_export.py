@@ -207,7 +207,7 @@ def export(tok, out, only):
                     head = [f'# {pg.get("title") or "(untitled)"}', '',
                             f'- Location: {label}' + (f' (subpage level {pg["level"]})' if pg.get('level') else ''),
                             f'- Created: {pg["createdDateTime"]} · Modified: {pg["lastModifiedDateTime"]}',
-                            f'- Source: {pg.get("links", {}).get("oneNoteWebUrl", {}).get("href", "")}', '', '---', '']
+                            f'- Source: {pg.get("links", {}).get("oneNoteWebUrl", {}).get("href", "")}', '', '---', '', '']
                     (out / rel).parent.mkdir(parents=True, exist_ok=True)
                     (out / rel).write_text('\n'.join(head) + body + '\n', encoding='utf-8')
                     raw = out / '_raw' / Path(rel).with_suffix('.html')
