@@ -31,12 +31,26 @@ Requirements:
 
 ## Use
 Ask Claude, for example: *"Export my OneNote to ./onenote"*, *"원노트 백업해줘"*, or run `/onenote-export:export`. Claude will:
-1. Ask you to sign in to Graph Explorer, consent to **Notes.Read** (once), and click **copy** on the Access token tab. You never paste the token into the chat.
+1. Ask you to copy a token (below). You never paste the token into the chat.
 2. Run the exporter in the background and report progress.
 3. Help with password-protected sections, check the result, and offer to note the export in your `CLAUDE.md`.
 
+### Getting the token (your part, about a minute)
+1. Open [Graph Explorer](https://developer.microsoft.com/graph/graph-explorer) and **sign in** (top right) with the Microsoft account that owns the notebooks.
+2. First time only: open **Modify permissions**, find **Notes.Read**, click **Consent**, and accept the Microsoft popup.
+3. Click **Run query** with `GET https://graph.microsoft.com/v1.0/me/onenote/notebooks`. You should see `OK - 200` and your notebooks.
+4. Open the **Access token** tab, click the **copy** icon, and tell Claude "copied".
+
+Tokens last about an hour. When Claude asks for a fresh one, reload Graph Explorer, click **Run query** and copy again. The export continues where it stopped.
+
 ### Expect throttling
-OneNote throttles hard after a few hundred requests (`429`, 15 s to 5 min per request). A few hundred pages can take a few hours. Tokens last about an hour. When one expires, Claude asks you to copy a fresh one and the run continues.
+OneNote throttles hard after a few hundred requests (`429`, 15 s to 5 min per request). A few hundred pages can take a few hours.
+
+### Refresh and use
+- **Refresh:** ask again, for example *"Refresh my OneNote export"*. Only new or changed pages are downloaded.
+- **Use:** ask questions such as *"Find my OneNote notes about the budget"*. Claude searches `INDEX.md` and the pages. If you accepted the `CLAUDE.md` line, later sessions know where the export is.
+
+Something wrong? See [troubleshooting](skills/export/references/troubleshooting.md).
 
 ## Output
 ```
@@ -58,6 +72,13 @@ uv run --locked skills/export/scripts/onenote_export.py --out ./onenote --only "
 uv run --locked skills/export/scripts/onenote_export.py --out ./onenote --verify
 ```
 Exit code 2 means there is no valid token: copy one and rerun.
+
+## Update or remove
+```
+claude plugin update onenote-export@onenote-export
+claude plugin uninstall onenote-export@onenote-export
+```
+Inside Claude Code, the `/plugin` menu does the same. Removing the plugin does not delete your exported notes.
 
 ## Limitations
 - **Password-protected sections** cannot be read by the API, even when unlocked. Remove the password temporarily, sync, export that section with `--only`, then set the password again.
