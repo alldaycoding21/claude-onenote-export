@@ -257,27 +257,41 @@ def verify(out):
     return 1 if bad else 0
 
 
-def clipboard_cmds():
-    if sys.platform == 'darwin':
-        return ['pbpaste'], ['pbcopy']
+def clipboard():
+    """(clipboard text, function that clears the clipboard)."""
     if sys.platform == 'win32':
-        ps = ['powershell', '-NoProfile', '-Command']
-        return ps + ['Get-Clipboard -Raw'], ps + ["Set-Clipboard -Value ' '"]
-    if shutil.which('wl-paste'):
-        return ['wl-paste', '-n'], ['wl-copy', '--clear']
-    return ['xclip', '-o', '-selection', 'clipboard'], ['xclip', '-i', '-selection', 'clipboard']
+        import tkinter  # ships with Python on Windows
+        tk = tkinter.Tk()
+        tk.withdraw()
+        try:
+            text = tk.clipboard_get()
+        except tkinter.TclError:  # empty or non-text clipboard
+            text = ''
+
+        def clear():
+            tk.clipboard_clear()
+            tk.update()
+            tk.destroy()
+        return text, clear
+    if sys.platform == 'darwin':
+        paste, wipe = ['pbpaste'], ['pbcopy']
+    elif shutil.which('wl-paste'):
+        paste, wipe = ['wl-paste', '-n'], ['wl-copy', '--clear']
+    else:
+        paste, wipe = ['xclip', '-o', '-selection', 'clipboard'], ['xclip', '-i', '-selection', 'clipboard']
+    try:
+        text = subprocess.run(paste, capture_output=True, text=True, encoding='utf-8', errors='replace').stdout
+    except FileNotFoundError:
+        sys.exit(f'Clipboard tool not found: {paste[0]}')
+    return text, lambda: subprocess.run(wipe, input='', text=True)
 
 
 def read_token():
-    paste, clear = clipboard_cmds()
-    try:
-        tok = subprocess.run(paste, capture_output=True, text=True, encoding='utf-8', errors='replace').stdout
-    except FileNotFoundError:
-        sys.exit(f'Clipboard tool not found: {paste[0]}')
-    tok = tok.strip().removeprefix('Bearer ')
+    text, clear = clipboard()
+    tok = text.strip().removeprefix('Bearer ')
     if len(tok) < 100 or not tok.isascii() or any(c.isspace() for c in tok):
         return None  # not a token: leave whatever the user copied untouched
-    subprocess.run(clear, input='', text=True)  # don't leave the token on the clipboard
+    clear()  # don't leave the token on the clipboard
     return tok
 
 

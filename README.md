@@ -74,8 +74,8 @@ Exit code 2 means there is no valid token: copy one and rerun.
   - With uv: `uv run --locked`. Dependencies are pinned in `onenote_export.py.lock`: markdownify 1.2.3, beautifulsoup4 4.15.0 and their dependencies, from PyPI.
   - Without uv: a venv in the plugin's data folder, with the same pinned versions.
 - **Reads:**
-  - The clipboard, once per run (`pbpaste`, PowerShell `Get-Clipboard`, `wl-paste` or `xclip`).
-    If the content looks like an access token, it is cleared (`pbcopy`, `Set-Clipboard`, `wl-copy --clear` or `xclip`).
+  - The clipboard, once per run (`pbpaste` on macOS, Python's built-in tkinter on Windows, `wl-paste` or `xclip` on Linux).
+    If the content looks like an access token, it is cleared (`pbcopy`, tkinter, `wl-copy --clear` or `xclip`).
     Anything else is left untouched.
   - Your OneNote notebooks, sections and pages, with their images and attachments.
 - **Sends:** HTTPS `GET` requests to `https://graph.microsoft.com` (Microsoft Graph OneNote API) only, with your token as the Bearer header.
