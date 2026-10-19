@@ -15,7 +15,8 @@ The token is read from the clipboard, then the clipboard is cleared. It is never
 Exit 2 = no token, or token expired/invalid -> copy a fresh token and rerun the same command
 (pages already exported are skipped).
 """
-import argparse, hashlib, json, mimetypes, re, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import argparse, hashlib, json, mimetypes, re, shutil, subprocess, sys, tempfile, time
+import urllib.error, urllib.parse, urllib.request
 from datetime import date
 from pathlib import Path
 
@@ -37,7 +38,14 @@ def safe(name, limit=80):
     return s or '(untitled)'
 
 
+def is_graph(url):
+    p = urllib.parse.urlsplit(url or '')
+    return p.scheme == 'https' and p.hostname == 'graph.microsoft.com'
+
+
 def get(url, tok):
+    if not is_graph(url):  # page HTML is untrusted: the token only ever goes to Graph
+        raise ValueError(f'refusing to send the token to {urllib.parse.urlsplit(url or "").hostname}')
     for i in range(10):
         time.sleep(0.5)  # ponytail: fixed pacing; OneNote throttling (429) is handled by the backoff below
         req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + tok})
@@ -172,6 +180,8 @@ def export(tok, out, only):
                         continue
 
                     def save(url, fname):
+                        if not is_graph(url):  # external link: keep as is, never fetch with the token
+                            return url or ''
                         f = out / sdir / '_files' / fname
                         if not (f.exists() and f.stat().st_size):
                             try:
@@ -277,6 +287,9 @@ def selftest():
     assert len(got) == 2
     assert safe('a/b:c?') == 'a_b_c_' and safe('  ') == '(untitled)'
     assert safe('CON') == '_CON' and safe('nul.txt') == '_nul.txt' and safe('x' * 79 + ' y') == 'x' * 79
+    assert is_graph('https://graph.microsoft.com/v1.0/x') and not is_graph('https://evil.example/resources/1/$value')
+    assert not is_graph('http://graph.microsoft.com/x') and not is_graph('https://graph.microsoft.com.evil.example/x')
+    assert not is_graph(None)
     assert rid('https://x/y?z') == rid('https://x/y?z') and len(rid('https://x/y?z')) == 16
     with tempfile.TemporaryDirectory() as d:  # utf-8 round trip + index + verify on a fake export
         out = Path(d)
