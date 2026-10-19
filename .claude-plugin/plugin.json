@@ -1,12 +1,15 @@
 {
   "name": "onenote-export",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Export all your Microsoft OneNote notebooks to local Markdown (with images, attachments and raw HTML) so Claude can read and search them. Incremental refresh, no Azure app registration needed.",
   "author": {
     "name": "onenote-export contributors"
   },
   "homepage": "https://github.com/alldaycoding21/claude-onenote-export",
   "repository": "https://github.com/alldaycoding21/claude-onenote-export",
+  "documentationUrl": "https://github.com/alldaycoding21/claude-onenote-export#readme",
+  "supportUrl": "https://github.com/alldaycoding21/claude-onenote-export/issues",
+  "privacyPolicyUrl": "https://github.com/alldaycoding21/claude-onenote-export/blob/main/PRIVACY.md",
   "license": "MIT",
   "keywords": [
     "onenote",

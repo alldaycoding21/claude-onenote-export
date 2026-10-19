@@ -85,6 +85,7 @@ Exit code 2 means there is no valid token: copy one and rerun.
   The token is never written anywhere.
 
 ## Security and privacy
+Full policy: [PRIVACY.md](PRIVACY.md).
 - Data goes only between your machine and `graph.microsoft.com`. The token is sent to no other host, even if a page links elsewhere.
 - The token is read from the clipboard, then the clipboard is cleared. The token is never printed, logged or saved. It expires in about an hour.
 - Your export may contain secrets, for example notes from formerly protected sections. Do not commit or share it. The repo's `.gitignore` ignores `onenote/`.
