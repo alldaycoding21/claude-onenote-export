@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+# exported notes may contain sensitive data — never commit them
+onenote/

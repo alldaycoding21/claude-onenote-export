@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "onenote-export",
+  "description": "OneNote → local Markdown export for Claude Code.",
+  "owner": {
+    "name": "onenote-export contributors"
+  },
+  "plugins": [
+    {
+      "name": "onenote-export",
+      "description": "Export all your OneNote notebooks to local Markdown so Claude can read and search them.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
