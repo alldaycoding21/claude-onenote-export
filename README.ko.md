@@ -4,7 +4,7 @@ Microsoft OneNote 노트북 **전체**를 로컬 마크다운으로 내보내는
 
 [English](README.md)
 
-- 페이지 하나가 `.md` 파일 하나가 됩니다. 구조는 `노트북/[섹션그룹/]섹션/NNN_제목.md`이고, 전체 목차는 `INDEX.md`에 있습니다.
+- 페이지 하나가 `.md` 파일 하나가 됩니다. 구조는 `노트북/[섹션그룹/]섹션/제목.md`입니다(제목이 같으면 `제목 (2).md`). OneNote 순서대로 정리된 전체 목차는 `INDEX.md`에 있습니다.
 - 이미지와 첨부파일도 함께 받고, 원본 HTML도 보관합니다.
 - 다시 실행하면 새로 생기거나 바뀐 페이지만 받습니다. 중간에 끊겨도 이어서 받습니다.
 - **Azure 앱 등록이 필요 없습니다.** 토큰은 Microsoft 공식 [Graph Explorer](https://developer.microsoft.com/graph/graph-explorer)에서 받습니다. 권한은 읽기 전용 `Notes.Read`입니다.

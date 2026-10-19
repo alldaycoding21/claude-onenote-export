@@ -4,7 +4,7 @@ A Claude Code plugin that exports **all** your Microsoft OneNote notebooks to lo
 
 [한국어](README.ko.md)
 
-- One `.md` per page, organized as `Notebook/[Section group/]Section/NNN_Title.md`, with an `INDEX.md` of everything.
+- One `.md` per page, organized as `Notebook/[Section group/]Section/Title.md`, with an `INDEX.md` of everything in OneNote order.
 - Images and attachments are downloaded next to the pages. The original page HTML is kept too.
 - Refresh any time: only new or changed pages are downloaded again. Interrupted runs resume where they stopped.
 - **No Azure app registration.** The token comes from Microsoft's own [Graph Explorer](https://developer.microsoft.com/graph/graph-explorer), with read-only `Notes.Read` access.
@@ -40,7 +40,7 @@ OneNote throttles hard after a few hundred requests (`429`, 15 s to 5 min per re
 ```
 onenote/
   INDEX.md                 sections → pages, modified dates, removed pages, failures
-  <Notebook>/<Section>/NNN_<Title>.md
+  <Notebook>/<Section>/<Title>.md       duplicates become "<Title> (2).md"; names never change on reorder
   <Notebook>/<Section>/_files/      images and attachments
   _raw/…/*.html            original page HTML (for offline re-conversion)
   _state.json              page id → path and modified time (drives incremental refresh; keep it)

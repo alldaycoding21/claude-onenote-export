@@ -26,7 +26,7 @@ Use these when driving Graph Explorer with browser automation, or when the user 
 | `Clipboard tool not found` (Linux) | Install `wl-clipboard` (Wayland) or `xclip` (X11) |
 
 ## Behaviour to know
-- **Incremental:** a page is downloaded again only if its `lastModifiedDateTime` changed or it moved to another section. A page that was only reordered is just renamed (`NNN_` = position in the section).
+- **Incremental:** a page is downloaded again only if its `lastModifiedDateTime` changed or it moved to another section. File names are fixed when a page is first exported (`Title.md`, or `Title (2).md` for duplicates). Reordering never renames files; the order is shown in `INDEX.md`. A retitled page gets a new file name.
 - **Deleted pages:** the local file stays. A full run (without `--only`) lists them in `INDEX.md` under "Removed in OneNote (kept locally)".
 - **Renamed section or notebook:** its pages are downloaded again into the new folder. The old `_files/` folder stays behind.
 - **Not converted to text:**

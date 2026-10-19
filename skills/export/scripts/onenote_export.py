@@ -141,6 +141,16 @@ def write_index(out, st, fails, gone):
     (out / 'INDEX.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
+def unique_path(st, pid, sdir, title):
+    """'Title.md', or 'Title (2).md'… if another page (incl. ones removed upstream) already owns the name."""
+    taken = {p['path'].lower() for i, p in st.items() if i != pid}  # case-insensitive file systems
+    base = (sdir / safe(title)).as_posix()
+    rel, k = base + '.md', 2
+    while rel.lower() in taken:
+        rel, k = f'{base} ({k}).md', k + 1
+    return rel
+
+
 def export(tok, out, only):
     out.mkdir(parents=True, exist_ok=True)
     st, fails, seen, failed_secs, done = load_state(out), [], set(), set(), False
@@ -164,15 +174,15 @@ def export(tok, out, only):
                 new = 0
                 for n, pg in enumerate(pages, 1):
                     seen.add(pg['id'])
-                    rel = (sdir / f'{n:03d}_{safe(pg.get("title"))}.md').as_posix()
                     old = st.get(pg['id'])
                     if (old and old['modified'] == pg['lastModifiedDateTime'] and old['section'] == label
                             and (out / old['path']).exists()):
-                        if old['path'] != rel:  # reordered within the section -> rename only
-                            (out / old['path']).replace(out / rel)
-                            old['path'] = rel
-                        old.update(order=n, level=pg.get('level', 0))
+                        old.update(order=n, level=pg.get('level', 0))  # order lives in INDEX, not file names
                         continue
+                    if old and old['section'] == label and old['title'] == pg.get('title'):
+                        rel = old['path']  # file names are stable once assigned
+                    else:
+                        rel = unique_path(st, pg['id'], sdir, pg.get('title'))
                     try:
                         html = get(f'{G}/pages/{pg["id"]}/content', tok).decode('utf-8')
                     except urllib.error.HTTPError as e:
@@ -304,7 +314,58 @@ def selftest():
         assert verify(out) == 0
         (out / 'Notizbuch/섹션/_files/a.png').unlink()
         assert verify(out) == 1
+    selftest_export()
     print('selftest ok')
+
+
+def selftest_export():
+    """export() against a fake Graph: incremental skip, same-title pages, reorder, edits, removals."""
+    spec, fetched = {}, []
+
+    def fake_get(url, tok):
+        assert is_graph(url), url
+        u = url.split('/me/onenote', 1)[1]
+        part = u.split('/')
+        js = lambda v: json.dumps({'value': v}).encode()
+        if u == '/notebooks':
+            return js([{'id': 'nb', 'displayName': 'NB'}])
+        if u == '/notebooks/nb/sections':
+            return js([{'id': s, 'displayName': s} for s in spec])
+        if u.endswith('/sectionGroups'):
+            return js([])
+        if part[1] == 'sections':
+            return js([dict(id=i, title=t, order=n, lastModifiedDateTime=m, createdDateTime=m)
+                       for n, (i, t, m) in enumerate(spec[part[2]])])
+        if part[1] == 'pages':
+            fetched.append(part[2])
+            return (f'<html><body><p>id-{part[2]}</p><img src="{G}/resources/r1/$value">'
+                    '<img src="https://evil.example/resources/r2/$value"></body></html>').encode()
+        return b'png'
+
+    def run(pages):
+        spec.clear(); spec.update(pages); fetched.clear()
+        export('t', out, [])
+        return load_state(out)
+
+    real_get, globals()['get'] = get, fake_get
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            out, v1, v2 = Path(d), '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z'
+            st = run({'A': [('p1', 'Meet', v1), ('p2', 'Meet', v1)]})
+            assert fetched == ['p1', 'p2'] and [st[i]['path'] for i in ('p1', 'p2')] == ['NB/A/Meet.md', 'NB/A/Meet (2).md']
+            md = (out / 'NB/A/Meet.md').read_text(encoding='utf-8')
+            assert 'id-p1' in md and '](_files/r1.png)' in md and 'https://evil.example/' in md, md
+            st = run({'A': [('p1', 'Meet', v1), ('p2', 'Meet', v1)]})
+            assert fetched == []
+            st = run({'A': [('p3', 'Meet', v1), ('p2', 'Meet', v1), ('p1', 'Meet', v1)]})  # new on top + reorder
+            assert fetched == ['p3'] and st['p3']['path'] == 'NB/A/Meet (3).md' and st['p1']['order'] == 3
+            assert all(f'id-{i}' in (out / p['path']).read_text(encoding='utf-8') for i, p in st.items())
+            st = run({'A': [('p3', 'Meet', v1), ('p1', 'Meet', v2)]})  # p2 removed upstream, p1 edited
+            assert fetched == ['p1'] and st['p1']['path'] == 'NB/A/Meet.md' and (out / 'NB/A/Meet (2).md').exists()
+            assert '- <NB/A/Meet (2).md>' in (out / 'INDEX.md').read_text(encoding='utf-8')
+            assert verify(out) == 0
+    finally:
+        globals()['get'] = real_get
 
 
 def main():
