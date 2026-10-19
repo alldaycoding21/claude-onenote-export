@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.9"
-# dependencies = ["markdownify>=1.2", "beautifulsoup4>=4.12"]
+# dependencies = ["markdownify==1.2.3", "beautifulsoup4==4.15.0"]
 # ///
 """Export Microsoft OneNote notebooks to local Markdown through Microsoft Graph.
 

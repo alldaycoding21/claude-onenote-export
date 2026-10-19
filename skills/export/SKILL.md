@@ -3,7 +3,7 @@ name: export
 description: Export, back up or sync Microsoft OneNote notebooks to local Markdown files so Claude can read and search them (all notebooks, section groups, sections and pages, with images, attachments and raw HTML; incremental refresh). Use when the user wants to export, back up, download or sync OneNote, make OneNote notes readable by Claude, or refresh an existing OneNote export. Also triggers on "원노트 내보내기", "원노트 백업", "원노트 전체 저장", "원노트 갱신".
 argument-hint: "[output folder] [--only Notebook[/Section]]"
 allowed-tools:
-  - Bash(uv run -q "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py" *)
+  - Bash(uv run --locked -q "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py" *)
   - Bash("${CLAUDE_PLUGIN_DATA}/venv/bin/python" "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py" *)
 ---
 
@@ -26,12 +26,12 @@ Arguments from the user, if any: $ARGUMENTS
 ## 1. Set up (once per machine)
 Pick the runner and call it `PY` below.
 - **`uv` on PATH (preferred):**
-  - `PY` = `uv run -q "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py"`
-  - Dependencies install automatically from the script header.
+  - `PY` = `uv run --locked -q "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py"`
+  - uv installs the pinned dependencies from `onenote_export.py.lock`.
 - **Otherwise**, with Python 3.9+:
   ```
   python3 -m venv "${CLAUDE_PLUGIN_DATA}/venv"
-  "${CLAUDE_PLUGIN_DATA}/venv/bin/python" -m pip install -q markdownify beautifulsoup4
+  "${CLAUDE_PLUGIN_DATA}/venv/bin/python" -m pip install -q markdownify==1.2.3 beautifulsoup4==4.15.0
   ```
   - `PY` = `"${CLAUDE_PLUGIN_DATA}/venv/bin/python" "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py"`
   - On Windows, use `python` instead of `python3` and `venv/Scripts/python.exe` instead of `venv/bin/python`.

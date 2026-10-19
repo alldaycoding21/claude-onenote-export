@@ -1,6 +1,6 @@
 {
   "name": "onenote-export",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Export all your Microsoft OneNote notebooks to local Markdown (with images, attachments and raw HTML) so Claude can read and search them. Incremental refresh, no Azure app registration needed.",
   "author": {
     "name": "onenote-export contributors"

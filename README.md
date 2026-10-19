@@ -4,6 +4,8 @@ A Claude Code plugin that exports **all** your Microsoft OneNote notebooks to lo
 
 [한국어](README.ko.md)
 
+> Unofficial community project. Not affiliated with, endorsed by or supported by Microsoft. OneNote and Microsoft Graph are trademarks of Microsoft.
+
 - One `.md` per page, organized as `Notebook/[Section group/]Section/Title.md`, with an `INDEX.md` of everything in OneNote order.
 - Images and attachments are downloaded next to the pages. The original page HTML is kept too.
 - Refresh any time: only new or changed pages are downloaded again. Interrupted runs resume where they stopped.
@@ -22,6 +24,7 @@ In Claude Code:
 - From a local clone, use `/plugin marketplace add ./claude-onenote-export`.
 
 Requirements:
+- **Claude Code on your own computer** (CLI or desktop app). It does not work in claude.ai chat or Cowork, because it needs your local clipboard and file system.
 - Python 3.9+
 - [`uv`](https://docs.astral.sh/uv/) is recommended. Without it, the skill creates a small venv.
 - A desktop clipboard: macOS, Windows, or Linux with `wl-clipboard`/`xclip`.
@@ -50,9 +53,9 @@ Each page starts with its location, created/modified times and a `Source:` link 
 ## Standalone (without Claude)
 Copy a token from Graph Explorer, then run:
 ```
-uv run skills/export/scripts/onenote_export.py --out ./onenote
-uv run skills/export/scripts/onenote_export.py --out ./onenote --only "Notebook" "Notebook/Group/Section"
-uv run skills/export/scripts/onenote_export.py --out ./onenote --verify
+uv run --locked skills/export/scripts/onenote_export.py --out ./onenote
+uv run --locked skills/export/scripts/onenote_export.py --out ./onenote --only "Notebook" "Notebook/Group/Section"
+uv run --locked skills/export/scripts/onenote_export.py --out ./onenote --verify
 ```
 Exit code 2 means there is no valid token: copy one and rerun.
 
@@ -65,6 +68,21 @@ Exit code 2 means there is no valid token: copy one and rerun.
 - **Deleted pages** are kept locally and listed in `INDEX.md`.
 - **SharePoint/Teams group notebooks** are not included.
 - Tested on macOS with a personal account. The Windows and Linux clipboard paths are implemented but not yet tested on real machines.
+
+## What this plugin runs, reads, sends and writes
+- **Runs:** one readable Python script, `skills/export/scripts/onenote_export.py`.
+  - With uv: `uv run --locked`. Dependencies are pinned in `onenote_export.py.lock`: markdownify 1.2.3, beautifulsoup4 4.15.0 and their dependencies, from PyPI.
+  - Without uv: a venv in the plugin's data folder, with the same pinned versions.
+- **Reads:**
+  - The clipboard, once per run (`pbpaste`, PowerShell `Get-Clipboard`, `wl-paste` or `xclip`).
+    If the content looks like an access token, it is cleared (`pbcopy`, `Set-Clipboard`, `wl-copy --clear` or `xclip`).
+    Anything else is left untouched.
+  - Your OneNote notebooks, sections and pages, with their images and attachments.
+- **Sends:** HTTPS `GET` requests to `https://graph.microsoft.com` (Microsoft Graph OneNote API) only, with your token as the Bearer header.
+  - No other hosts, no telemetry, no analytics.
+  - Nothing in OneNote is created, changed or deleted.
+- **Writes:** only inside the output folder you choose: Markdown, images/attachments, raw HTML, `INDEX.md`, `_state.json` and `_failures.md`.
+  The token is never written anywhere.
 
 ## Security and privacy
 - Data goes only between your machine and `graph.microsoft.com`. The token is sent to no other host, even if a page links elsewhere.
