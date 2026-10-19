@@ -2,9 +2,6 @@
 name: export
 description: Export, back up or sync Microsoft OneNote notebooks to local Markdown files so Claude can read and search them (all notebooks, section groups, sections and pages, with images, attachments and raw HTML; incremental refresh). Use when the user wants to export, back up, download or sync OneNote, make OneNote notes readable by Claude, or refresh an existing OneNote export. Also triggers on "원노트 내보내기", "원노트 백업", "원노트 전체 저장", "원노트 갱신".
 argument-hint: "[output folder] [--only Notebook[/Section]]"
-allowed-tools:
-  - Bash(uv run --locked -q "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py" *)
-  - Bash("${CLAUDE_PLUGIN_DATA}/venv/bin/python" "${CLAUDE_SKILL_DIR}/scripts/onenote_export.py" *)
 ---
 
 # OneNote → local Markdown
