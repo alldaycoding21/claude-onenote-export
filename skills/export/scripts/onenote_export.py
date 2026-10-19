@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["markdownify>=1.2", "beautifulsoup4>=4.12"]
+# ///
+"""Export Microsoft OneNote notebooks to local Markdown through Microsoft Graph.
+
+Token: Graph Explorer (https://developer.microsoft.com/graph/graph-explorer) -> sign in -> Access token tab -> copy.
+The token is read from the clipboard, then the clipboard is cleared. It is never printed or saved.
+
+  onenote_export.py [--out DIR] [--only NOTEBOOK[/GROUP/SECTION] ...]   export (incremental, resumable)
+  onenote_export.py [--out DIR] --verify | --rerender                     offline check / re-convert from _raw
+  onenote_export.py --selftest
+
+Exit 2 = no token, or token expired/invalid -> copy a fresh token and rerun the same command
+(pages already exported are skipped).
+"""
+import argparse, hashlib, json, mimetypes, re, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+from datetime import date
+from pathlib import Path
+
+from bs4 import BeautifulSoup
+from markdownify import markdownify
+
+G = 'https://graph.microsoft.com/v1.0/me/onenote'
+RESERVED = {'CON', 'PRN', 'AUX', 'NUL', *(f'{p}{i}' for p in ('COM', 'LPT') for i in range(1, 10))}
+
+
+class TokenExpired(Exception):
+    pass
+
+
+def safe(name, limit=80):
+    s = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', (name or '').strip())[:limit].strip(' .')
+    if s.split('.')[0].upper() in RESERVED:  # Windows device names
+        s = '_' + s
+    return s or '(untitled)'
+
+
+def get(url, tok):
+    for i in range(10):
+        time.sleep(0.5)  # ponytail: fixed pacing; OneNote throttling (429) is handled by the backoff below
+        req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + tok})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise TokenExpired(e.read().decode('utf-8', 'replace')[:300])
+            if e.code not in (429, 500, 502, 503, 504) or i == 9:
+                e.detail = e.read().decode('utf-8', 'replace')[:300]
+                raise
+            wait = max(int(e.headers.get('Retry-After') or 0), min(300, 15 * 2 ** i))
+            print(f'  {e.code} -> waiting {wait}s', flush=True)
+            time.sleep(wait)
+        except (urllib.error.URLError, TimeoutError):
+            if i == 5:
+                raise
+            time.sleep(5 * 2 ** i)
+
+
+def items(url, tok):
+    while url:
+        d = json.loads(get(url, tok))
+        yield from d['value']
+        url = d.get('@odata.nextLink')
+
+
+def walk(tok, base, path):
+    for s in items(base + '/sections', tok):
+        yield path + [s['displayName']], s
+    for g in items(base + '/sectionGroups', tok):
+        yield from walk(tok, f'{G}/sectionGroups/{g["id"]}', path + [g['displayName']])
+
+
+def rid(url):
+    m = re.search(r'/resources/([^/]+)/', url or '')
+    return safe(m.group(1)) if m else hashlib.sha1((url or '').encode()).hexdigest()[:16]
+
+
+def render(html, save):
+    """OneNote page HTML -> Markdown. save(url, filename) returns the local relative link."""
+    soup = BeautifulSoup(html, 'html.parser')
+    for img in soup.find_all('img'):
+        url = img.get('data-fullres-src') or img.get('src')
+        if url and '/resources/' in url:
+            mime = img.get('data-fullres-src-type') or img.get('data-src-type') or ''
+            img['src'] = save(url, rid(url) + (mimetypes.guess_extension(mime) or '.png'))
+    for o in soup.find_all('object'):
+        name = o.get('data-attachment') or 'attachment'
+        fname = re.sub(r'[()\[\]]', '_', re.sub(r'\s+', '_', safe(name)))  # spaces/brackets break md links
+        a = soup.new_tag('a', href=save(o.get('data'), rid(o.get('data')) + '_' + fname))
+        a.string = '📎 ' + name
+        o.replace_with(a)
+    for t in soup.select('[data-tag]'):
+        if 'to-do' in t['data-tag']:
+            t.insert(0, '[x] ' if 'completed' in t['data-tag'] else '[ ] ')
+    md = markdownify(str(soup.body or soup), heading_style='ATX', bullets='-', table_infer_header=True,
+                     escape_underscores=False, escape_asterisks=False)  # keep identifiers greppable
+    return re.sub(r'\n{3,}', '\n\n', md).strip()
+
+
+def load_state(out):
+    f = out / '_state.json'
+    return json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
+
+
+def save_state(out, st):
+    tmp = out / '_state.json.tmp'  # write-then-rename: a killed run never leaves a truncated state
+    tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding='utf-8')
+    tmp.replace(out / '_state.json')
+
+
+def write_index(out, st, fails, gone):
+    tree = {}
+    for p in st.values():
+        tree.setdefault(p['section'], []).append(p)
+    lines = [f'# OneNote export ({date.today()})', '',
+             "- One `.md` per page. Images/attachments in each section's `_files/`, original HTML in `_raw/`.",
+             '- Refresh: rerun the exporter; only changed pages are downloaded again.',
+             '- ⚠️ May contain sensitive content (e.g. formerly password-protected sections). '
+             'Do not share, upload or commit this folder.', '']
+    for sec in sorted(tree):
+        pages = sorted(tree[sec], key=lambda p: p['order'])
+        lines.append(f'## {sec} ({len(pages)})')
+        for p in pages:
+            lines.append(f'{"  " * p["level"]}- [{p["title"] or "(untitled)"}](<{p["path"]}>) · {p["modified"][:10]}')
+        lines.append('')
+    if gone:
+        lines += ['## Removed in OneNote (kept locally)', ''] + [f'- <{g}>' for g in gone] + ['']
+    if fails:
+        lines += ['## Failures', ''] + [f'- {f}' for f in fails]
+    (out / 'INDEX.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+def export(tok, out, only):
+    out.mkdir(parents=True, exist_ok=True)
+    st, fails, seen, failed_secs, done = load_state(out), [], set(), set(), False
+    try:
+        for nb in items(f'{G}/notebooks', tok):
+            if only and not any(o.split('/')[0] == nb['displayName'] for o in only):
+                continue
+            for path, sec in walk(tok, f'{G}/notebooks/{nb["id"]}', [nb['displayName']]):
+                if only and not any('/'.join(path + ['']).startswith(o.rstrip('/') + '/') for o in only):
+                    continue
+                label = ' / '.join(path)
+                sdir = Path(*map(safe, path))
+                try:
+                    pages = sorted(items(f'{G}/sections/{sec["id"]}/pages?pagelevel=true&$top=100', tok),
+                                   key=lambda p: p.get('order', 0))
+                except urllib.error.HTTPError as e:
+                    fails.append(f'{label}: cannot open section {e.code} {getattr(e, "detail", "")}')
+                    failed_secs.add(label)
+                    print('FAIL', label, e.code, flush=True)
+                    continue
+                new = 0
+                for n, pg in enumerate(pages, 1):
+                    seen.add(pg['id'])
+                    rel = (sdir / f'{n:03d}_{safe(pg.get("title"))}.md').as_posix()
+                    old = st.get(pg['id'])
+                    if (old and old['modified'] == pg['lastModifiedDateTime'] and old['section'] == label
+                            and (out / old['path']).exists()):
+                        if old['path'] != rel:  # reordered within the section -> rename only
+                            (out / old['path']).replace(out / rel)
+                            old['path'] = rel
+                        old.update(order=n, level=pg.get('level', 0))
+                        continue
+                    try:
+                        html = get(f'{G}/pages/{pg["id"]}/content', tok).decode('utf-8')
+                    except urllib.error.HTTPError as e:
+                        fails.append(f'{label} / {pg.get("title")}: {e.code} {getattr(e, "detail", "")}')
+                        continue
+
+                    def save(url, fname):
+                        f = out / sdir / '_files' / fname
+                        if not (f.exists() and f.stat().st_size):
+                            try:
+                                data = get(url, tok)
+                            except urllib.error.HTTPError as e:
+                                fails.append(f'{label} / {pg.get("title")}: resource {fname} {e.code}')
+                                return url
+                            f.parent.mkdir(parents=True, exist_ok=True)
+                            f.write_bytes(data)
+                        return f'_files/{fname}'
+
+                    body = render(html, save)
+                    head = [f'# {pg.get("title") or "(untitled)"}', '',
+                            f'- Location: {label}' + (f' (subpage level {pg["level"]})' if pg.get('level') else ''),
+                            f'- Created: {pg["createdDateTime"]} · Modified: {pg["lastModifiedDateTime"]}',
+                            f'- Source: {pg.get("links", {}).get("oneNoteWebUrl", {}).get("href", "")}', '', '---', '']
+                    (out / rel).parent.mkdir(parents=True, exist_ok=True)
+                    (out / rel).write_text('\n'.join(head) + body + '\n', encoding='utf-8')
+                    raw = out / '_raw' / Path(rel).with_suffix('.html')
+                    raw.parent.mkdir(parents=True, exist_ok=True)
+                    raw.write_text(html, encoding='utf-8')
+                    if old and old['path'] != rel and (out / old['path']).exists():
+                        (out / old['path']).unlink()
+                    st[pg['id']] = dict(path=rel, section=label, title=pg.get('title'), order=n,
+                                        level=pg.get('level', 0), modified=pg['lastModifiedDateTime'])
+                    save_state(out, st)
+                    new += 1
+                print(f'{label}: {len(pages)}p (+{new})', flush=True)
+        done = True
+    finally:
+        gone = sorted(p['path'] for i, p in st.items()
+                      if i not in seen and p['section'] not in failed_secs) if done and not only else []
+        save_state(out, st)
+        write_index(out, st, fails, gone)
+        (out / '_failures.md').write_text('# Failures\n\n' + ''.join(f'- {f}\n' for f in fails), encoding='utf-8')
+    return fails, gone
+
+
+def rerender(out):
+    """Conversion rules changed: rebuild every .md from _raw HTML (no network; uses already-saved files)."""
+    for p in load_state(out).values():
+        md = out / p['path']
+        head = md.read_text(encoding='utf-8').split('\n---\n', 1)[0]
+        html = (out / '_raw' / Path(p['path']).with_suffix('.html')).read_text(encoding='utf-8')
+        md.write_text(head + '\n---\n\n' + render(html, lambda url, f: f'_files/{f}') + '\n', encoding='utf-8')
+    print('rerender ok')
+
+
+def verify(out):
+    """State <-> disk, and every _files link in the .md points to an existing non-empty file."""
+    st, bad = load_state(out), []
+    for p in st.values():
+        md = out / p['path']
+        if not md.exists():
+            bad.append(f'missing: {p["path"]}')
+            continue
+        for link in re.findall(r'\]\((_files/[^)\s]+)\)', md.read_text(encoding='utf-8')):
+            f = md.parent / link
+            if not (f.exists() and f.stat().st_size):
+                bad.append(f'broken link: {p["path"]} -> {link}')
+    print(f'pages {len(st)} · sections {len({p["section"] for p in st.values()})} · problems {len(bad)}',
+          *bad[:20], sep='\n')
+    return 1 if bad else 0
+
+
+def clipboard_cmds():
+    if sys.platform == 'darwin':
+        return ['pbpaste'], ['pbcopy']
+    if sys.platform == 'win32':
+        ps = ['powershell', '-NoProfile', '-Command']
+        return ps + ['Get-Clipboard -Raw'], ps + ["Set-Clipboard -Value ' '"]
+    if shutil.which('wl-paste'):
+        return ['wl-paste', '-n'], ['wl-copy', '--clear']
+    return ['xclip', '-o', '-selection', 'clipboard'], ['xclip', '-i', '-selection', 'clipboard']
+
+
+def read_token():
+    paste, clear = clipboard_cmds()
+    try:
+        tok = subprocess.run(paste, capture_output=True, text=True, encoding='utf-8', errors='replace').stdout
+    except FileNotFoundError:
+        sys.exit(f'Clipboard tool not found: {paste[0]}')
+    tok = tok.strip().removeprefix('Bearer ')
+    if len(tok) < 100 or not tok.isascii() or any(c.isspace() for c in tok):
+        return None  # not a token: leave whatever the user copied untouched
+    subprocess.run(clear, input='', text=True)  # don't leave the token on the clipboard
+    return tok
+
+
+def selftest():
+    html = ('<html><head><title>t</title></head><body><div><p data-tag="to-do:completed">done</p>'
+            '<p data-tag="to-do">todo</p><img src="https://g/onenote/resources/0-ab!1-cd/$value" data-src-type="image/png">'
+            '<object data-attachment="report (final) v2.pdf" type="application/pdf" '
+            'data="https://g/onenote/resources/0-ef/$value"></object>'
+            '<p>ss_no_override **x**</p><table><tr><td>a</td><td>b</td></tr></table></div></body></html>')
+    got = []
+    md = render(html, lambda url, f: got.append(url) or f'_files/{f}')
+    assert '[x] done' in md and '[ ] todo' in md, md
+    assert '](_files/0-ab!1-cd.png)' in md, md
+    assert '[📎 report (final) v2.pdf](_files/0-ef_report__final__v2.pdf)' in md, md
+    assert '| a | b |' in md and 't\n' not in md, md
+    assert 'ss_no_override **x**' in md, md
+    assert len(got) == 2
+    assert safe('a/b:c?') == 'a_b_c_' and safe('  ') == '(untitled)'
+    assert safe('CON') == '_CON' and safe('nul.txt') == '_nul.txt' and safe('x' * 79 + ' y') == 'x' * 79
+    assert rid('https://x/y?z') == rid('https://x/y?z') and len(rid('https://x/y?z')) == 16
+    with tempfile.TemporaryDirectory() as d:  # utf-8 round trip + index + verify on a fake export
+        out = Path(d)
+        rel = 'Notizbuch/섹션/001_日本語.md'
+        (out / 'Notizbuch/섹션/_files').mkdir(parents=True)
+        (out / 'Notizbuch/섹션/_files/a.png').write_bytes(b'x')
+        (out / rel).write_text('# 日本語\n\n---\n\n![](_files/a.png) ü', encoding='utf-8')
+        save_state(out, {'p1': dict(path=rel, section='Notizbuch / 섹션', title='日本語', order=1, level=0,
+                                    modified='2026-01-01T00:00:00Z')})
+        write_index(out, load_state(out), [], [])
+        assert f'(<{rel}>)' in (out / 'INDEX.md').read_text(encoding='utf-8')
+        assert verify(out) == 0
+        (out / 'Notizbuch/섹션/_files/a.png').unlink()
+        assert verify(out) == 1
+    print('selftest ok')
+
+
+def main():
+    sys.stdout.reconfigure(errors='replace')  # non-UTF-8 consoles must not crash on emoji/CJK titles
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--out', type=Path, default=Path('onenote'), help='output folder (default: ./onenote)')
+    ap.add_argument('--only', nargs='+', default=[], metavar='NOTEBOOK[/GROUP/SECTION]',
+                    help='limit to these notebooks or section paths')
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument('--verify', action='store_true', help='check the export on disk (offline)')
+    mode.add_argument('--rerender', action='store_true', help='rebuild .md from _raw HTML (offline)')
+    mode.add_argument('--selftest', action='store_true', help='run built-in checks')
+    a = ap.parse_args()
+    if a.selftest:
+        return selftest()
+    if a.verify:
+        return verify(a.out)
+    if a.rerender:
+        return rerender(a.out)
+    tok = read_token()
+    if not tok:
+        print('No access token on the clipboard. Graph Explorer -> Access token tab -> copy, then rerun.')
+        return 2
+    print(f'Exporting to {a.out.resolve()}', flush=True)
+    try:
+        fails, gone = export(tok, a.out, a.only)
+    except TokenExpired as e:
+        hint = (' Notes.Read is not consented: Graph Explorer -> Modify permissions -> Notes.Read -> Consent.'
+                if '40001' in str(e) else '')
+        print(f'401 Unauthorized: token expired or invalid.{hint} Copy a fresh token and rerun the same command.')
+        return 2
+    print(f'Done. failures {len(fails)} (see _failures.md) · removed in OneNote {len(gone)} (listed in INDEX.md)')
+
+
+if __name__ == '__main__':
+    sys.exit(main())
